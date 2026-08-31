@@ -44,7 +44,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       _isLoading = false;
     });
 
-    // Zero-Tap Auto Dispatch trigger for CRITICAL urgency
     if (result.urgency == 'CRITICAL') {
       _triggerZeroTapSos(result);
     }
@@ -132,7 +131,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(
                           child: Text(
@@ -144,17 +142,23 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                             ),
                           ),
                         ),
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            final msg = SosBroadcastService.buildSosMessage(
-                              problem: _analysis!.problem,
-                              location: _analysis!.location,
-                            );
-                            SosBroadcastService.shareViaSystem(msg);
-                          },
-                          icon: const Icon(Icons.sos, color: Colors.white),
-                          label: const Text('Broadcast SOS'),
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              final msg = SosBroadcastService.buildSosMessage(
+                                problem: _analysis!.problem,
+                                location: _analysis!.location,
+                              );
+                              SosBroadcastService.shareViaSystem(msg);
+                            },
+                            icon: const Icon(Icons.sos, color: Colors.white, size: 18),
+                            label: const Text('Broadcast SOS', style: TextStyle(color: Colors.white, fontSize: 13)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                          ),
                         ),
                       ],
                     ),

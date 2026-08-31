@@ -1,8 +1,14 @@
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 class LocationService {
   static Future<String> getCurrentLocationString() async {
     try {
+      // Return fallback quickly on Web if geolocator is blocked/unsupported
+      if (kIsWeb) {
+        return 'User Location (Web Browser GPS)';
+      }
+
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) return 'Location services disabled';
 
@@ -19,8 +25,8 @@ class LocationService {
       }
 
       Position position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.low),
+      ).timeout(const Duration(seconds: 4));
 
       return '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)} (GPS Live)';
     } catch (e) {

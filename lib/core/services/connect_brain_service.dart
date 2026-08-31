@@ -1,202 +1,162 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../models/clarifying_question.dart';
 import '../../models/problem_analysis.dart';
 import '../../models/solution_option.dart';
 import 'incident_logger_service.dart';
-import 'location_service.dart';
+import 'location_service.dart'; 
 import 'medical_profile_service.dart';
 import 'notification_service.dart';
+import 'sos_broadcast_service.dart';
 
 class ConnectBrainService {
-  static const String _apiKey = 'AQ_PASTE_YOUR_EXACT_KEY_HERE';
-
-  static const String _apiUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent';
+  // Replace with your actual Gemini API Key starting with AIza...
+  static const String _apiKey = 'AQ.Ab8RN6IXay80iSWtpBjoIutl9_t1ym_ujKKdDXXXyiaZSo-KCQ';
+  static const String _endpoint =
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$_apiKey';
 
   Future<ProblemAnalysis> analyze(
-    String input, {
+    String problem, {
     Map<String, String>? answers,
     String targetLanguage = 'English',
   }) async {
-    final text = input.trim();
-    final selectedAnswers = answers ?? {};
-    final cacheKey = 'connect_cache_${targetLanguage}_${text.toLowerCase()}';
+    final location = await LocationService.getCurrentLocationString();
+    final medicalProfile = await MedicalProfileService.getProfile();
 
-    // Log input event to audit trail
-    await IncidentLoggerService.logEvent('QUERY_INITIATED', 'Input: "$text"');
-
-    // Fetch Medical Profile for Context Injection
-    final medProfile = await MedicalProfileService.getProfile();
-    final medicalContext = '''
-User Name: ${medProfile.fullName}
-Blood Group: ${medProfile.bloodGroup}
-Allergies: ${medProfile.allergies}
-Medical Conditions: ${medProfile.medicalConditions}
-Emergency Contact: ${medProfile.emergencyContactName} (${medProfile.emergencyContactPhone})
-''';
-
-    // Response Caching
-    if (selectedAnswers.isEmpty) {
-      final prefs = await SharedPreferences.getInstance();
-      final cachedData = prefs.getString(cacheKey);
-      if (cachedData != null) {
-        return _parseJsonToAnalysis(text, jsonDecode(cachedData));
-      }
-    }
-
-    final gpsLocation = await LocationService.getCurrentLocationString();
-
-    if (_apiKey.trim().isEmpty || _apiKey == 'PASTE_YOUR_AQ_KEY_HERE') {
-      return _fallbackAnalyze(text, selectedAnswers, gpsLocation);
-    }
-
-    try {
-      final prompt = '''
-You are CONNECT, an AI-powered emergency & problem-to-solution engine.
-Analyze this human problem: "$text"
-User Live GPS Location Context: "$gpsLocation"
-User Medical Profile Context: "$medicalContext"
-Contextual answers provided so far: ${jsonEncode(selectedAnswers)}
-Target Language for Output: "$targetLanguage"
-
-Respond strictly in valid JSON format matching this schema:
+    final systemPrompt = '''
+You are the CONNECT Safety & Emergency Resolution Engine.
+Analyze the user's emergency/crisis statement and return ONLY a valid raw JSON object matching this structure:
 {
-  "category": "String (One of: 🚨 URGENT HELP, 🛠️ SERVICES, 🤝 PEOPLE, 📦 RESOURCES, 📚 GUIDANCE)",
-  "problemType": "String (Concise classification in $targetLanguage)",
-  "urgency": "String (LOW, MEDIUM, HIGH, or CRITICAL)",
-  "location": "String (Live location context in $targetLanguage)",
-  "needs": ["Array of 3 core requirements in $targetLanguage"],
-  "questions": [
-    {
-      "id": "q1",
-      "question": "Clarifying question in $targetLanguage?",
-      "options": ["Option 1", "Option 2", "Option 3"]
-    }
-  ],
+  "problem": "$problem",
+  "category": "Emergency / Safety / Technical / Medical",
+  "problemType": "Short descriptive summary",
+  "urgency": "CRITICAL / HIGH / MEDIUM / LOW",
+  "location": "$location",
+  "locationRequired": false,
+  "needs": ["Need 1", "Need 2", "Need 3"],
+  "missingInformation": [],
+  "questions": [],
   "solutionOptions": [
     {
-      "title": "Fastest Solution",
-      "badge": "⚡",
-      "subtitle": "Short subtitle in $targetLanguage",
-      "description": "Actionable path description in $targetLanguage"
-    },
-    {
-      "title": "Most Economical",
-      "badge": "💰",
-      "subtitle": "Short subtitle in $targetLanguage",
-      "description": "Actionable path description in $targetLanguage"
+      "title": "Action Option Title",
+      "subtitle": "Short subtitle",
+      "description": "Detailed emergency procedure step.",
+      "badge": "IMMEDIATE"
     }
   ]
 }
+
+Target Language for Response Text: $targetLanguage.
+Medical Context: Blood Group: ${medicalProfile.bloodGroup}, Allergies: ${medicalProfile.allergies}, Conditions: ${medicalProfile.medicalConditions}.
+Answered Clarifications: ${jsonEncode(answers ?? {})}
 ''';
 
+    try {
       final response = await http.post(
-        Uri.parse('$_apiUrl?key=$_apiKey'),
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': _apiKey,
-        },
+        Uri.parse(_endpoint),
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'contents': [
             {
               'parts': [
-                {'text': prompt}
+                {'text': systemPrompt}
               ]
             }
-          ],
-          'generationConfig': {'response_mime_type': 'application/json'}
+          ]
         }),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final rawJson = data['candidates'][0]['content']['parts'][0]['text'];
-        final parsed = jsonDecode(rawJson);
+        final rawText = data['candidates']?[0]?['content']?['parts']?[0]?['text'] ?? '';
+        final cleanedJsonText = rawText.replaceAll('```json', '').replaceAll('```', '').trim();
+        final map = jsonDecode(cleanedJsonText) as Map<String, dynamic>;
 
-        if (selectedAnswers.isEmpty) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(cacheKey, rawJson);
-        }
+        final analysis = ProblemAnalysis(
+          problem: map['problem'] ?? problem,
+          category: map['category'] ?? 'Emergency Dispatch',
+          problemType: map['problemType'] ?? 'Crisis Input',
+          urgency: map['urgency'] ?? 'HIGH',
+          location: map['location'] ?? location,
+          locationRequired: map['locationRequired'] ?? false,
+          needs: List<String>.from(map['needs'] ?? []),
+          missingInformation: List<String>.from(map['missingInformation'] ?? []),
+          questions: const [],
+          solutionOptions: [
+            const SolutionOption(
+              title: 'Dial Emergency Helpline 112',
+              subtitle: 'Direct Emergency Line',
+              description: 'Tap to place an immediate emergency call to national dispatch.',
+              badge: 'URGENT',
+              accent: Colors.red,
+            ),
+          ],
+        );
 
-        if (parsed['urgency'] == 'CRITICAL' || parsed['urgency'] == 'HIGH') {
-          await NotificationService.showEmergencyNotification(
-            title: '🚨 High Urgency Detected',
-            body: 'Active route: ${parsed['problemType']}',
-          );
-        }
+        await IncidentLoggerService.logEvent(
+          'Crisis Analysis Generated',
+          'Urgency: ${analysis.urgency}, Category: ${analysis.category}',
+        );
+        await _handleAutomatedAlerts(analysis);
 
-        return _parseJsonToAnalysis(text, parsed);
+        return analysis;
       }
-    } catch (e) {
-      debugPrint('AI API Exception: $e');
+    } catch (_) {
+      // Fallback response handles network or parse failures smoothly below
     }
 
-    return _fallbackAnalyze(text, selectedAnswers, gpsLocation);
-  }
-
-  ProblemAnalysis _parseJsonToAnalysis(String text, Map<String, dynamic> parsed) {
-    return ProblemAnalysis(
-      problem: text,
-      category: parsed['category'] ?? '📚 GUIDANCE',
-      problemType: parsed['problemType'] ?? 'General Issue',
-      urgency: parsed['urgency'] ?? 'MEDIUM',
-      location: parsed['location'] ?? 'User Location',
+    final fallbackAnalysis = ProblemAnalysis(
+      problem: problem,
+      category: 'Emergency Dispatch',
+      problemType: 'Unstructured Crisis Input',
+      urgency: 'HIGH',
+      location: location,
       locationRequired: true,
-      needs: List<String>.from(parsed['needs'] ?? []),
+      needs: const ['Emergency Assistance', 'Immediate Contact'],
       missingInformation: const [],
-      questions: (parsed['questions'] as List? ?? [])
-          .map((q) => ClarifyingQuestion(
-                id: q['id'] ?? 'q',
-                question: q['question'] ?? '',
-                options: List<String>.from(q['options'] ?? []),
-              ))
-          .toList(),
-      solutionOptions: (parsed['solutionOptions'] as List? ?? [])
-          .map((s) => SolutionOption(
-                title: s['title'] ?? 'Option',
-                badge: s['badge'] ?? '💡',
-                subtitle: s['subtitle'] ?? '',
-                description: s['description'] ?? '',
-                accent: const Color(0xFF1E5EFF),
-              ))
-          .toList(),
-    );
-  }
-
-  ProblemAnalysis _fallbackAnalyze(String text, Map<String, String> answers, String gpsLocation) {
-    return ProblemAnalysis(
-      problem: text,
-      category: '📚 GUIDANCE / 🛠️ SERVICES',
-      problemType: 'General Problem Resolution',
-      urgency: 'MEDIUM',
-      location: answers['location'] ?? gpsLocation,
-      locationRequired: false,
-      needs: const [
-        'Understand core underlying issue',
-        'Identify target solution network',
-        'Create actionable step sequence'
-      ],
-      missingInformation: const [],
-      questions: const [
-        ClarifyingQuestion(
-          id: 'timeframe',
-          question: 'How quickly do you need this problem resolved?',
-          options: ['Immediately (Within 2 hrs)', 'Today', 'In a few days'],
-        ),
-      ],
+      questions: const [],
       solutionOptions: const [
         SolutionOption(
-          title: 'Direct Action Plan',
-          badge: '⚡',
-          subtitle: 'Step-by-step resolution path',
-          description: 'Follow organized steps tailored to your specific problem.',
-          accent: Color(0xFF1E5EFF),
-        ),
+          title: 'Dial Emergency Helpline 112',
+          subtitle: 'Direct Emergency Line',
+          description: 'Tap to place an immediate emergency call to national dispatch.',
+          badge: 'URGENT',
+          accent: Colors.red,
+        )
       ],
     );
+
+    await IncidentLoggerService.logEvent(
+      'Fallback Emergency Dispatch Engaged',
+      'Location: $location',
+    );
+    await _handleAutomatedAlerts(fallbackAnalysis);
+
+    return fallbackAnalysis;
+  }
+
+  Future<void> _handleAutomatedAlerts(ProblemAnalysis analysis) async {
+    if (analysis.urgency == 'CRITICAL' || analysis.urgency == 'HIGH') {
+      final profile = await MedicalProfileService.getProfile();
+
+      await NotificationService.showEmergencyNotification(
+        title: '🚨 ${analysis.urgency} Urgency Alert',
+        body: 'Emergency response activated for: ${analysis.problem}',
+      );
+
+      if (profile.emergencyContactPhone.isNotEmpty) {
+        final message = SosBroadcastService.buildSosMessage(
+          problem: analysis.problem,
+          location: analysis.location,
+          medicalNotes:
+              'Blood Group: ${profile.bloodGroup}, Allergies: ${profile.allergies}',
+        );
+        await SosBroadcastService.sendDirectSms(
+          profile.emergencyContactPhone,
+          message,
+        );
+      }
+    }
   }
 }
