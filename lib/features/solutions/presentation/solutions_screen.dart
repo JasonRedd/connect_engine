@@ -16,25 +16,68 @@ class SolutionsScreen extends StatelessWidget {
   final ProblemAnalysis? analysis;
 
   Future<void> _handleAction(BuildContext context, String title, String description) async {
-    final textLower = problem.toLowerCase();
+    final titleLower = title.toLowerCase();
+    final descLower = description.toLowerCase();
+    final problemLower = problem.toLowerCase();
 
     await IncidentLoggerService.logEvent(
       'ACTION_EXECUTED',
       'Title: $title | Description: $description',
     );
 
-    // Audio guidance trigger
+    // Trigger audio guidance
     AudioGuidanceService.speak('Executing $title. $description');
 
-    if (title.contains('Fastest') || textLower.contains('emergency') || textLower.contains('broke')) {
-      final Uri phoneUri = Uri(scheme: 'tel', path: '108');
+    // 1. Direct Emergency Call Handler (tel:112 or tel:108)
+    if (titleLower.contains('call') ||
+        titleLower.contains('dial') ||
+        titleLower.contains('112') ||
+        titleLower.contains('108') ||
+        titleLower.contains('helpline')) {
+      final Uri phoneUri = Uri(scheme: 'tel', path: '112');
       if (await canLaunchUrl(phoneUri)) {
         await launchUrl(phoneUri);
         return;
       }
     }
 
-    final Uri mapUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(problem)}');
+    // 2. Direct Emergency SMS Handler
+    if (titleLower.contains('sms') || titleLower.contains('text') || titleLower.contains('broadcast')) {
+      final Uri smsUri = Uri.parse(
+        'sms:112?body=${Uri.encodeComponent("EMERGENCY ALERT: Need urgent assistance for problem: $problem")}',
+      );
+      if (await canLaunchUrl(smsUri)) {
+        await launchUrl(smsUri);
+        return;
+      }
+    }
+
+    // 3. Smart Google Maps Search Router (Structured Category Search)
+    String searchQuery = 'emergency services near me';
+
+    if (problemLower.contains('tree') ||
+        problemLower.contains('car') ||
+        problemLower.contains('vehicle') ||
+        problemLower.contains('breakdown') ||
+        problemLower.contains('towing') ||
+        descLower.contains('towing')) {
+      searchQuery = 'towing service roadside assistance near me';
+    } else if (problemLower.contains('bleed') ||
+        problemLower.contains('fever') ||
+        problemLower.contains('injury') ||
+        problemLower.contains('medical') ||
+        descLower.contains('hospital')) {
+      searchQuery = 'hospitals emergency room near me';
+    } else if (problemLower.contains('fire') || descLower.contains('fire')) {
+      searchQuery = 'fire station near me';
+    } else if (problemLower.contains('crime') || problemLower.contains('threat') || descLower.contains('police')) {
+      searchQuery = 'police station near me';
+    }
+
+    final Uri mapUri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(searchQuery)}',
+    );
+
     if (await canLaunchUrl(mapUri)) {
       await launchUrl(mapUri, mode: LaunchMode.externalApplication);
     } else {
