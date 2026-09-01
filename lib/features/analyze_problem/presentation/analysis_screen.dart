@@ -7,9 +7,14 @@ import '../../../models/problem_analysis.dart';
 import '../../solutions/presentation/solutions_screen.dart';
 
 class AnalysisScreen extends StatefulWidget {
-  const AnalysisScreen({super.key, required this.problem});
+  const AnalysisScreen({
+    super.key,
+    required this.problem,
+    this.base64Image,
+  });
 
   final String problem;
+  final String? base64Image;
 
   @override
   State<AnalysisScreen> createState() => _AnalysisScreenState();

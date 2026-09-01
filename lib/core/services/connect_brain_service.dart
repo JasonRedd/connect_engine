@@ -1,9 +1,7 @@
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-import '../../models/clarifying_question.dart';
 import '../../models/problem_analysis.dart';
 import '../../models/solution_option.dart';
 import 'incident_logger_service.dart';
@@ -13,11 +11,11 @@ import 'notification_service.dart';
 import 'sos_broadcast_service.dart';
 
 class ConnectBrainService {
+  // Use --dart-define=GEMINI_API_KEY=your_key or replace placeholder
   static const String _apiKey = String.fromEnvironment(
     'GEMINI_API_KEY',
-    defaultValue: 'YOUR_GEMINI_API_KEY',
+    defaultValue: 'YOUR_GEMINI_API_KEY_HERE',
   );
-
   static const String _endpoint =
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$_apiKey';
 
@@ -25,260 +23,166 @@ class ConnectBrainService {
     String problem, {
     Map<String, String>? answers,
     String targetLanguage = 'English',
+    String? base64Image,
   }) async {
-    String location = 'Location Unavailable';
-    dynamic profile;
+    // Concurrent execution to prevent I/O bottlenecks
+    final results = await Future.wait([
+      LocationService.getCurrentLocationString(),
+      MedicalProfileService.getProfile(),
+    ]);
 
-    try {
-      final results = await Future.wait([
-        LocationService.getCurrentLocationString(),
-        MedicalProfileService.getProfile(),
-      ]).timeout(const Duration(seconds: 2));
-
-      location = results[0] as String;
-      profile = results[1];
-    } catch (_) {
-      // Quietly continue if local services delay
-    }
-
+    final location = results[0] as String;
+    final medicalProfile = results[1] as dynamic;
+    
     final systemPrompt = '''
-You are the CONNECT Emergency Resolution Engine.
-Analyze the user's crisis: "$problem".
-Assess severity, formulate emergency investigation questions to evaluate risks, and provide step-by-step first-aid/rescue guidelines along with specific emergency routing.
-
-Return ONLY a valid raw JSON object matching this structure:
+You are the CONNECT Safety & Emergency Resolution Engine.
+Analyze the user's emergency/crisis statement (and any attached image payload) and return ONLY a valid raw JSON object matching this structure:
 {
-  "category": "Child Rescue / Medical / Fire / Vehicle / Crime",
-  "problemType": "Descriptive summary of the exact situation",
+  "problem": "$problem",
+  "category": "Emergency / Safety / Technical / Medical",
+  "problemType": "Short descriptive summary",
   "urgency": "CRITICAL / HIGH / MEDIUM / LOW",
-  "needs": ["Specific Need 1", "Specific Need 2", "Specific Need 3"],
-  "questions": [
-    {
-      "id": "q1",
-      "question": "Crucial investigative question to assess situation depth?",
-      "options": ["Option 1", "Option 2", "Option 3"]
-    }
-  ],
+  "location": "$location",
+  "locationRequired": false,
+  "needs": ["Need 1", "Need 2", "Need 3"],
+  "missingInformation": [],
+  "questions": [],
   "solutionOptions": [
     {
-      "title": "Immediate Physical Step / First Aid Guide",
-      "subtitle": "Critical Action Protocol",
-      "description": "Step 1: Do X immediately. Step 2: Ensure Y. Step 3: Do not Z.",
-      "badge": "GUIDELINE"
-    },
-    {
-      "title": "Call Specialized Response Unit (e.g., Fire & Rescue / Ambulance 108 / Police)",
-      "subtitle": "Targeted Service Dispatch",
-      "description": "Contact specific department directly for specialized equipment and personnel.",
-      "badge": "DISPATCH"
+      "title": "Action Option Title",
+      "subtitle": "Short subtitle",
+      "description": "Detailed emergency procedure step.",
+      "badge": "IMMEDIATE"
     }
   ]
 }
 
 Target Language: $targetLanguage.
-User Answered Questions So Far: ${jsonEncode(answers ?? {})}
-User Medical Context: Blood ${profile?.bloodGroup ?? 'Unknown'}, Allergies ${profile?.allergies ?? 'None'}.
+Medical Context: Blood Group: ${medicalProfile.bloodGroup}, Allergies: ${medicalProfile.allergies}.
+Answered Clarifications: ${jsonEncode(answers ?? {})}
 ''';
 
-    if (_apiKey != 'YOUR_GEMINI_API_KEY' && _apiKey.isNotEmpty) {
-      try {
-        final response = await http
-            .post(
-              Uri.parse(_endpoint),
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'contents': [
-                  {
-                    'parts': [
-                      {'text': systemPrompt}
-                    ]
-                  }
-                ]
-              }),
-            )
-            .timeout(const Duration(seconds: 4));
+    final List<Map<String, dynamic>> parts = [
+      {'text': systemPrompt}
+    ];
 
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          final rawText =
-              data['candidates']?[0]?['content']?['parts']?[0]?['text'] ?? '';
-
-          final cleanedJson = rawText
-              .replaceAll('```json', '')
-              .replaceAll('```', '')
-              .trim();
-
-          final map = jsonDecode(cleanedJson) as Map<String, dynamic>;
-
-          final analysis = ProblemAnalysis(
-            problem: problem,
-            category: map['category'] ?? 'Crisis Incident',
-            problemType: map['problemType'] ?? 'Emergency Incident',
-            urgency: map['urgency'] ?? 'HIGH',
-            location: location,
-            locationRequired: false,
-            needs: List<String>.from(map['needs'] ?? ['Emergency Assistance']),
-            missingInformation: const [],
-            questions: (map['questions'] as List? ?? [])
-                .map((q) => ClarifyingQuestion(
-                      id: q['id'] ?? 'q1',
-                      question: q['question'] ?? '',
-                      options: List<String>.from(q['options'] ?? []),
-                    ))
-                .toList(),
-            solutionOptions: (map['solutionOptions'] as List? ?? [])
-                .map((opt) => SolutionOption(
-                      title: opt['title'] ?? 'Emergency Action',
-                      subtitle: opt['subtitle'] ?? 'Immediate Step',
-                      description: opt['description'] ?? 'Follow emergency safety procedures.',
-                      badge: opt['badge'] ?? 'GUIDE',
-                      accent: _getBadgeColor(opt['badge']),
-                    ))
-                .toList(),
-          );
-
-          _fireAndForgetAlerts(analysis, profile);
-          return analysis;
+    // Append Base64 image payload if present
+    if (base64Image != null && base64Image.isNotEmpty) {
+      parts.add({
+        'inline_data': {
+          'mime_type': 'image/jpeg',
+          'data': base64Image,
         }
-      } catch (_) {
-        // Fall back to context-aware local intelligence engine below
+      });
+    }
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse(_endpoint),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'contents': [
+                {'parts': parts}
+              ]
+            }),
+          )
+          .timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final rawText =
+            data['candidates']?[0]?['content']?['parts']?[0]?['text'] ?? '';
+        final cleanedJsonText =
+            rawText.replaceAll('```json', '').replaceAll('```', '').trim();
+        final map = jsonDecode(cleanedJsonText) as Map<String, dynamic>;
+
+        final analysis = ProblemAnalysis(
+          problem: map['problem'] ?? problem,
+          category: map['category'] ?? 'Emergency Dispatch',
+          problemType: map['problemType'] ?? 'Crisis Input',
+          urgency: map['urgency'] ?? 'HIGH',
+          location: map['location'] ?? location,
+          locationRequired: map['locationRequired'] ?? false,
+          needs: List<String>.from(map['needs'] ?? []),
+          missingInformation:
+              List<String>.from(map['missingInformation'] ?? []),
+          questions: const [],
+          solutionOptions: [
+            const SolutionOption(
+              title: 'Dial Emergency Helpline 112',
+              subtitle: 'Direct Emergency Line',
+              description:
+                  'Tap to place an immediate emergency call to national dispatch.',
+              badge: 'URGENT',
+              accent: Colors.red,
+            ),
+          ],
+        );
+
+        // Non-blocking background dispatches
+        IncidentLoggerService.logEvent(
+          'Crisis Analysis Generated',
+          'Urgency: ${analysis.urgency}, Category: ${analysis.category}',
+        );
+        _handleAutomatedAlerts(analysis);
+
+        return analysis;
       }
+    } catch (_) {
+      // Fallback executes seamlessly below on timeout or network errors
     }
 
-    // Context-Aware Local Intelligence Engine (Fallback when offline/unauthenticated)
-    final fallbackAnalysis = _buildSmartContextFallback(problem, location);
-    _fireAndForgetAlerts(fallbackAnalysis, profile);
-    return fallbackAnalysis;
-  }
-
-  static Color _getBadgeColor(String? badge) {
-    switch (badge?.toUpperCase()) {
-      case 'GUIDELINE':
-      case 'FIRST-AID':
-        return Colors.green.shade700;
-      case 'DISPATCH':
-      case 'CRITICAL':
-        return Colors.red.shade700;
-      default:
-        return Colors.orange.shade800;
-    }
-  }
-
-  ProblemAnalysis _buildSmartContextFallback(String problem, String location) {
-    final lower = problem.toLowerCase();
-
-    if (lower.contains('child') || lower.contains('drainage') || lower.contains('fall') || lower.contains('water') || lower.contains('trapped')) {
-      return ProblemAnalysis(
-        problem: problem,
-        category: 'Rescue & Technical Rescue Dispatch',
-        problemType: 'Trapped Person / Hazardous Extraction',
-        urgency: 'CRITICAL',
-        location: location,
-        locationRequired: true,
-        needs: const ['Drainage Extraction Team', 'Subsurface Ventilation', 'Pediatric Medical Crew'],
-        missingInformation: const ['Is the child visible from above?', 'Is water flowing in the drainage?'],
-        questions: const [
-          ClarifyingQuestion(
-            id: 'drainage_depth',
-            question: 'Is the child conscious and responding to your voice?',
-            options: ['Yes - Conscious & Talking', 'No - Unresponsive', 'Unsure / Cannot See'],
-          ),
-          ClarifyingQuestion(
-            id: 'water_flow',
-            question: 'Is water actively flowing or filling the drain?',
-            options: ['Dry / Standing Water', 'Fast Flowing Water', 'Fumes / Strong Odor'],
-          ),
-        ],
-        solutionOptions: const [
-          SolutionOption(
-            title: 'Immediate On-Scene Safety Guidelines',
-            subtitle: 'Critical Physical Actions Before Help Arrives',
-            description: '1. Do NOT enter the drain without a tether; sewer gases cause loss of consciousness.\n2. Keep verbal contact with the child to keep them calm.\n3. Lower a rope or sturdy cloth if safe, but do not block air flow.',
-            badge: 'GUIDELINE',
-            accent: Colors.green,
-          ),
-          SolutionOption(
-            title: 'Alert Fire & Special Rescue Services (101 / Disaster Control)',
-            subtitle: 'Specialized Hydraulic & Extraction Squad',
-            description: 'Directly dispatches Fire & Rescue team equipped with heavy lifting gear and gas detectors.',
-            badge: 'DISPATCH',
-            accent: Colors.red,
-          ),
-          SolutionOption(
-            title: 'Dispatch Emergency Medical Response (108)',
-            subtitle: 'Pediatric Trauma & Oxygen Support',
-            description: 'Alerts nearby advanced life support ambulance for immediate trauma assessment upon extraction.',
-            badge: 'DISPATCH',
-            accent: Colors.amber,
-          ),
-        ],
-      );
-    }
-
-    // Default Multi-Option Fallback
-    return ProblemAnalysis(
+    final fallbackAnalysis = ProblemAnalysis(
       problem: problem,
       category: 'Emergency Dispatch',
-      problemType: 'General Crisis Incident',
+      problemType: 'Unstructured Crisis Input',
       urgency: 'HIGH',
       location: location,
       locationRequired: true,
-      needs: const ['On-site Guidance', 'Emergency Response Unit'],
+      needs: const ['Emergency Assistance', 'Immediate Contact'],
       missingInformation: const [],
-      questions: const [
-        ClarifyingQuestion(
-          id: 'urgency_check',
-          question: 'Are there immediate life-threatening injuries on scene?',
-          options: ['Yes - Severe Bleeding / Unconscious', 'No - Stable but Trapped', 'Uncertain'],
-        ),
-      ],
+      questions: const [],
       solutionOptions: const [
         SolutionOption(
-          title: 'Immediate On-Site Safety Protocol',
-          subtitle: 'Scene Stabilization',
-          description: 'Assess scene for hazards (fire, live wires, traffic). Keep victims stationary unless immediate danger exists.',
-          badge: 'GUIDELINE',
-          accent: Colors.green,
-        ),
-        SolutionOption(
-          title: 'Dispatch National Emergency Control Room (112)',
-          subtitle: 'Multi-Agency Unified Dispatch',
-          description: 'Triggers combined dispatch of Police, Medical, and Fire services to coordinates.',
-          badge: 'DISPATCH',
+          title: 'Dial Emergency Helpline 112',
+          subtitle: 'Direct Emergency Line',
+          description:
+              'Tap to place an immediate emergency call to national dispatch.',
+          badge: 'URGENT',
           accent: Colors.red,
-        ),
+        )
       ],
     );
+
+    IncidentLoggerService.logEvent(
+      'Fallback Emergency Dispatch Engaged',
+      'Location: $location',
+    );
+    _handleAutomatedAlerts(fallbackAnalysis);
+
+    return fallbackAnalysis;
   }
 
-  void _fireAndForgetAlerts(ProblemAnalysis analysis, dynamic profile) {
-    unawaited(
-      IncidentLoggerService.logEvent(
-        'Crisis Processed',
-        'Urgency: ${analysis.urgency}, Category: ${analysis.category}',
-      ),
-    );
-
+  Future<void> _handleAutomatedAlerts(ProblemAnalysis analysis) async {
     if (analysis.urgency == 'CRITICAL' || analysis.urgency == 'HIGH') {
-      unawaited(
-        NotificationService.showEmergencyNotification(
-          title: '🚨 ${analysis.urgency} Alert',
-          body: 'Response activated for: ${analysis.problem}',
-        ),
+      final profile = await MedicalProfileService.getProfile();
+
+      NotificationService.showEmergencyNotification(
+        title: '🚨 ${analysis.urgency} Urgency Alert',
+        body: 'Emergency response activated for: ${analysis.problem}',
       );
 
-      if (profile != null && (profile.emergencyContactPhone?.isNotEmpty ?? false)) {
+      if (profile.emergencyContactPhone.isNotEmpty) {
         final message = SosBroadcastService.buildSosMessage(
           problem: analysis.problem,
           location: analysis.location,
           medicalNotes:
               'Blood Group: ${profile.bloodGroup}, Allergies: ${profile.allergies}',
         );
-        unawaited(
-          SosBroadcastService.sendDirectSms(
-            profile.emergencyContactPhone,
-            message,
-          ),
+        SosBroadcastService.sendDirectSms(
+          profile.emergencyContactPhone,
+          message,
         );
       }
     }

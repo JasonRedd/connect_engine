@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../analyze_problem/presentation/analysis_screen.dart';
+import '../../camera/presentation/emergency_camera_screen.dart';
 import '../../directory/presentation/offline_directory_screen.dart';
 import '../../first_aid/presentation/first_aid_screen.dart';
 import '../../profile/presentation/medical_profile_screen.dart';
@@ -59,7 +60,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CONNECT Safety Engine', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('CONNECT Safety Engine',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         elevation: 0,
       ),
       body: SingleChildScrollView(
@@ -69,13 +71,16 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           children: [
             Card(
               elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Emergency Crisis AI Input', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    const Text('Emergency Crisis AI Input',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 12),
                     TextField(
                       controller: _crisisController,
@@ -83,17 +88,21 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       decoration: InputDecoration(
                         hintText: 'e.g. Engine fire on highway, severe bleeding...',
                         suffixIcon: IconButton(
-                          icon: Icon(_isListening ? Icons.mic : Icons.mic_none, color: _isListening ? Colors.red : Colors.blue),
+                          icon: Icon(_isListening ? Icons.mic : Icons.mic_none,
+                              color: _isListening ? Colors.red : Colors.blue),
                           onPressed: _toggleVoiceInput,
                         ),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red.shade700,
+                            foregroundColor: Colors.white),
                         onPressed: () => _submitCrisis(_crisisController.text),
                         icon: const Icon(Icons.bolt),
                         label: const Text('Analyze Emergency Crisis'),
@@ -104,7 +113,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            const Text('Quick Emergency Tools', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('Quick Emergency Tools',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             GridView.count(
               crossAxisCount: 2,
@@ -114,32 +124,48 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               physics: const NeverScrollableScrollPhysics(),
               children: [
                 _DashboardTile(
+                  title: 'Visual AI Scan',
+                  subtitle: 'Analyze hazard via photo/camera',
+                  icon: Icons.linked_camera,
+                  color: Colors.purple.shade800,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const EmergencyCameraScreen()),
+                  ),
+                ),
+                _DashboardTile(
                   title: 'Offline Helplines',
                   subtitle: 'National emergency directory',
                   icon: Icons.contact_phone,
                   color: Colors.blue.shade800,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OfflineDirectoryScreen())),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const OfflineDirectoryScreen()),
+                  ),
                 ),
                 _DashboardTile(
                   title: 'First-Aid Guides',
                   subtitle: 'Interactive cards with audio',
                   icon: Icons.medical_services,
                   color: Colors.green.shade800,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FirstAidScreen())),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const FirstAidScreen()),
+                  ),
                 ),
                 _DashboardTile(
                   title: 'Medical Profile',
                   subtitle: 'Personal safety context card',
                   icon: Icons.badge,
                   color: Colors.amber.shade900,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MedicalProfileScreen())),
-                ),
-                _DashboardTile(
-                  title: 'Instant SOS',
-                  subtitle: 'Broadcast emergency coordinates',
-                  icon: Icons.sos,
-                  color: Colors.red.shade900,
-                  onTap: () => _submitCrisis('CRITICAL EMERGENCY SOS BROADCAST'),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const MedicalProfileScreen()),
+                  ),
                 ),
               ],
             ),
@@ -183,9 +209,12 @@ class _DashboardTile extends StatelessWidget {
           children: [
             Icon(icon, color: color, size: 32),
             const SizedBox(height: 12),
-            Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: color)),
+            Text(title,
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 16, color: color)),
             const SizedBox(height: 4),
-            Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            Text(subtitle,
+                style: const TextStyle(fontSize: 12, color: Colors.grey)),
           ],
         ),
       ),
