@@ -1,218 +1,346 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../../core/services/connect_brain_service.dart';
+import 'widgets/solution_graph_visualizer.dart';
 
-import '../../../core/services/audio_guidance_service.dart';
-import '../../../core/services/incident_logger_service.dart';
-import '../../../models/problem_analysis.dart';
+class SolutionsScreen extends StatefulWidget {
+  final String originalProblem;
+  final String aiDiagnosis;
+  final String locationContext;
+  final String urgencyLevel;
+  final List<String> selectedClarifications;
 
-class SolutionsScreen extends StatelessWidget {
   const SolutionsScreen({
     super.key,
-    required this.problem,
-    this.analysis,
+    required this.originalProblem,
+    required this.aiDiagnosis,
+    required this.locationContext,
+    required this.urgencyLevel,
+    required this.selectedClarifications,
   });
 
-  final String problem;
-  final ProblemAnalysis? analysis;
+  @override
+  State<SolutionsScreen> createState() => _SolutionsScreenState();
+}
 
-  Future<void> _handleAction(BuildContext context, String title, String description) async {
-    final titleLower = title.toLowerCase();
-    final descLower = description.toLowerCase();
-    final problemLower = problem.toLowerCase();
+class _SolutionsScreenState extends State<SolutionsScreen> {
+  final ConnectBrainService _brainService = ConnectBrainService();
+  late Future<OrchestratedSolutionResult> _solutionFuture;
 
-    await IncidentLoggerService.logEvent(
-      'ACTION_EXECUTED',
-      'Title: $title | Description: $description',
+  bool? _isSolved;
+  bool _feedbackSubmitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _solutionFuture = _brainService.getOrchestratedSolutions(
+      widget.originalProblem,
+      widget.selectedClarifications,
     );
+  }
 
-    // Trigger audio guidance
-    AudioGuidanceService.speak('Executing $title. $description');
+  void _submitFeedback(bool solved) {
+    setState(() {
+      _isSolved = solved;
+      _feedbackSubmitted = true;
+    });
 
-    // 1. Direct Emergency Call Handler (tel:112 or tel:108)
-    if (titleLower.contains('call') ||
-        titleLower.contains('dial') ||
-        titleLower.contains('112') ||
-        titleLower.contains('108') ||
-        titleLower.contains('helpline')) {
-      final Uri phoneUri = Uri(scheme: 'tel', path: '112');
-      if (await canLaunchUrl(phoneUri)) {
-        await launchUrl(phoneUri);
-        return;
-      }
-    }
-
-    // 2. Direct Emergency SMS Handler
-    if (titleLower.contains('sms') || titleLower.contains('text') || titleLower.contains('broadcast')) {
-      final Uri smsUri = Uri.parse(
-        'sms:112?body=${Uri.encodeComponent("EMERGENCY ALERT: Need urgent assistance for problem: $problem")}',
-      );
-      if (await canLaunchUrl(smsUri)) {
-        await launchUrl(smsUri);
-        return;
-      }
-    }
-
-    // 3. Smart Google Maps Search Router (Structured Category Search)
-    String searchQuery = 'emergency services near me';
-
-    if (problemLower.contains('tree') ||
-        problemLower.contains('car') ||
-        problemLower.contains('vehicle') ||
-        problemLower.contains('breakdown') ||
-        problemLower.contains('towing') ||
-        descLower.contains('towing')) {
-      searchQuery = 'towing service roadside assistance near me';
-    } else if (problemLower.contains('bleed') ||
-        problemLower.contains('fever') ||
-        problemLower.contains('injury') ||
-        problemLower.contains('medical') ||
-        descLower.contains('hospital')) {
-      searchQuery = 'hospitals emergency room near me';
-    } else if (problemLower.contains('fire') || descLower.contains('fire')) {
-      searchQuery = 'fire station near me';
-    } else if (problemLower.contains('crime') || problemLower.contains('threat') || descLower.contains('police')) {
-      searchQuery = 'police station near me';
-    }
-
-    final Uri mapUri = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(searchQuery)}',
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          solved
+              ? "Great! Glad CONNECT could assist you."
+              : "Feedback received. We'll improve these routing paths.",
+        ),
+        backgroundColor: solved ? Colors.green.shade700 : Colors.grey.shade800,
+        duration: const Duration(seconds: 2),
+      ),
     );
-
-    if (await canLaunchUrl(mapUri)) {
-      await launchUrl(mapUri, mode: LaunchMode.externalApplication);
-    } else {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not launch action intent.')),
-      );
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final options = analysis?.solutionOptions ?? [];
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CONNECT Solution Engine'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf),
-            tooltip: 'Export Audit PDF',
-            onPressed: () {
-              IncidentLoggerService.exportPdfReport(
-                problem,
-                analysis?.location ?? 'User Location',
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.volume_up),
-            tooltip: 'Read Solution Aloud',
-            onPressed: () {
-              if (options.isNotEmpty) {
-                AudioGuidanceService.speak(
-                  'Primary recommendation: ${options.first.title}. ${options.first.description}',
-                );
-              }
-            },
-          ),
-        ],
+        title: const Text("CONNECT Solution Engine"),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Orchestrated Solution Paths',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
+      body: FutureBuilder<OrchestratedSolutionResult>(
+        future: _solutionFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text("Synthesizing diagnostic causes & solution paths..."),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text('For: $problem', style: const TextStyle(color: Colors.grey, fontSize: 15)),
-              if (analysis != null) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.orange.shade200),
-                  ),
-                  child: Text(
-                    'Urgency: ${analysis!.urgency} • Location: ${analysis!.location}',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orange.shade900),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 20),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: options.length,
-                  itemBuilder: (context, index) {
-                    final option = options[index];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 16),
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: option.accent.withValues(alpha: 0.4)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
+            );
+          }
+
+          if (snapshot.hasError || !snapshot.hasData) {
+            return const Center(child: Text("Unable to generate solutions. Please try again."));
+          }
+
+          final result = snapshot.data!;
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header Context Banner
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: option.accent.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Center(child: Text(option.badge, style: const TextStyle(fontSize: 20))),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(option.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                                    Text(option.subtitle, style: const TextStyle(color: Colors.grey, fontSize: 13)),
-                                  ],
-                                ),
-                              ),
-                            ],
+                          const Text(
+                            "Diagnostic Solution Plan",
+                            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                           ),
-                          const SizedBox(height: 12),
-                          Text(option.description),
-                          const SizedBox(height: 14),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: () => _handleAction(context, option.title, option.description),
-                              icon: const Icon(Icons.launch, size: 18),
-                              label: Text('Execute ${option.title}'),
+                          const SizedBox(height: 2),
+                          Text(
+                            "For: ${widget.originalProblem}",
+                            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Text(
+                        "URGENCY: ${widget.urgencyLevel}",
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.red.shade800,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // 1. AI DIAGNOSTIC EVALUATION & CAUSES CARD
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16.0),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(12.0),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.psychology, color: Colors.blue.shade700, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            "DIAGNOSTIC SUMMARY & POTENTIAL CAUSES",
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade900,
                             ),
                           ),
                         ],
                       ),
-                    );
-                  },
+                      const SizedBox(height: 8),
+                      Text(
+                        widget.aiDiagnosis,
+                        style: TextStyle(fontSize: 13, color: Colors.blue.shade900, height: 1.3),
+                      ),
+                      const Divider(height: 20),
+                      Text(
+                        "Likely Underlying Causes:",
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue.shade900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Column(
+                        children: result.possibleCauses.map((cause) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 4.0),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(Icons.error_outline, size: 14, color: Colors.blue.shade700),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    cause,
+                                    style: TextStyle(fontSize: 12, color: Colors.blue.shade900),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ),
+                const SizedBox(height: 16),
+
+                // 2. IMMEDIATE ACTIONS TO TAKE RIGHT NOW
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16.0),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(12.0),
+                    border: Border.all(color: Colors.amber.shade300),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.medical_services_outlined, color: Colors.amber.shade900, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            "IMMEDIATE ACTIONS TO TAKE RIGHT NOW",
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.amber.shade900,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Column(
+                        children: result.immediateActions.map((action) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 6.0),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(Icons.check_circle_outline, size: 16, color: Colors.amber.shade800),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    action,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.amber.shade900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // 3. ACTIONABLE ROUTING PATHS
+                const Text(
+                  "External Real-World Help & Services",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+
+                SolutionGraphVisualizer(solutionPaths: result.solutionPaths),
+
+                const SizedBox(height: 24),
+
+                // 4. FEEDBACK LOOP CARD
+                Container(
+                  padding: const EdgeInsets.all(16.0),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(16.0),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: _feedbackSubmitted
+                      ? Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              _isSolved == true ? Icons.check_circle : Icons.info,
+                              color: _isSolved == true ? Colors.green : Colors.orange,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              "Thank you for helping CONNECT learn!",
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                          ],
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Did this solve your problem?",
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF1E293B),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "Your feedback trains our diagnostic models for accuracy.",
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => _submitFeedback(true),
+                                    icon: const Icon(Icons.thumb_up_alt_outlined, size: 16),
+                                    label: const Text("Yes, Solved"),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.green.shade700,
+                                      side: BorderSide(color: Colors.green.shade300),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => _submitFeedback(false),
+                                    icon: const Icon(Icons.thumb_down_alt_outlined, size: 16),
+                                    label: const Text("No, Need Help"),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.red.shade700,
+                                      side: BorderSide(color: Colors.red.shade300),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

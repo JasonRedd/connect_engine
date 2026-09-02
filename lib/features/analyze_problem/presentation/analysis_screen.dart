@@ -1,20 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
-
 import '../../../core/services/connect_brain_service.dart';
-import '../../../core/services/sos_broadcast_service.dart';
-import '../../../models/problem_analysis.dart';
 import '../../solutions/presentation/solutions_screen.dart';
 
 class AnalysisScreen extends StatefulWidget {
+  final String? problem;
+  final String? problemText;
+  final String? base64Image;
+
   const AnalysisScreen({
     super.key,
-    required this.problem,
+    this.problem,
+    this.problemText,
     this.base64Image,
   });
-
-  final String problem;
-  final String? base64Image;
 
   @override
   State<AnalysisScreen> createState() => _AnalysisScreenState();
@@ -22,289 +20,247 @@ class AnalysisScreen extends StatefulWidget {
 
 class _AnalysisScreenState extends State<AnalysisScreen> {
   final ConnectBrainService _brainService = ConnectBrainService();
-  final Map<String, String> _selectedAnswers = {};
-  late stt.SpeechToText _speech;
+  late Future<ProblemAnalysis> _analysisFuture;
+  
+  // Maps diagnostic question index -> selected option string
+  final Map<int, String> _selectedAnswers = {};
+  int _loadingStep = 0;
 
-  bool _isLoading = true;
-  bool _isListening = false;
-  String _selectedLanguage = 'English';
-  ProblemAnalysis? _analysis;
+  String get _userProblem =>
+      widget.problemText ?? widget.problem ?? "Unknown Problem";
 
   @override
   void initState() {
     super.initState();
-    _speech = stt.SpeechToText();
-    _fetchAnalysis();
+    _startLoadingPipeline();
+    _analysisFuture = _brainService.analyzeProblem(_userProblem);
   }
 
-  Future<void> _fetchAnalysis() async {
-    setState(() => _isLoading = true);
-    final result = await _brainService.analyze(
-      widget.problem,
-      answers: _selectedAnswers,
-      targetLanguage: _selectedLanguage,
-    );
+  void _startLoadingPipeline() async {
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (mounted) setState(() => _loadingStep = 1);
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (mounted) setState(() => _loadingStep = 2);
+  }
+
+  void _onOptionSelected(int questionIndex, String option) {
     setState(() {
-      _analysis = result;
-      _isLoading = false;
+      _selectedAnswers[questionIndex] = option;
     });
-
-    if (result.urgency == 'CRITICAL') {
-      _triggerZeroTapSos(result);
-    }
-  }
-
-  void _triggerZeroTapSos(ProblemAnalysis analysis) {
-    final sosMsg = SosBroadcastService.buildSosMessage(
-      problem: analysis.problem,
-      location: analysis.location,
-    );
-    SosBroadcastService.shareViaSystem(sosMsg);
-  }
-
-  Future<void> _listenVoiceInput() async {
-    if (!_isListening) {
-      bool available = await _speech.initialize();
-      if (available) {
-        setState(() => _isListening = true);
-        _speech.listen(
-          onResult: (val) {
-            if (val.finalResult && val.recognizedWords.isNotEmpty) {
-              setState(() => _isListening = false);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => AnalysisScreen(problem: val.recognizedWords),
-                ),
-              );
-            }
-          },
-        );
-      }
-    } else {
-      setState(() => _isListening = false);
-      _speech.stop();
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CONNECT AI Brain'),
-        actions: [
-          DropdownButton<String>(
-            value: _selectedLanguage,
-            underline: const SizedBox(),
-            icon: const Icon(Icons.language, color: Colors.blue),
-            items: const [
-              DropdownMenuItem(value: 'English', child: Text('English ')),
-              DropdownMenuItem(value: 'Telugu', child: Text('తెలుగు ')),
-              DropdownMenuItem(value: 'Hindi', child: Text('हिंदी ')),
-              DropdownMenuItem(value: 'Spanish', child: Text('Español ')),
-            ],
-            onChanged: (lang) {
-              if (lang != null) {
-                setState(() => _selectedLanguage = lang);
-                _fetchAnalysis();
-              }
-            },
-          ),
-          const SizedBox(width: 12),
-        ],
+        title: const Text("CONNECT AI Brain"),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _listenVoiceInput,
-        backgroundColor: _isListening ? Colors.red : Colors.blue,
-        child: Icon(_isListening ? Icons.mic : Icons.mic_none),
-      ),
-      body: SafeArea(
-        child: _isLoading
-            ? const Center(
+      body: FutureBuilder<ProblemAnalysis>(
+        future: _analysisFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32.0),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
-                    Text('CONNECT Engine processing crisis graph...'),
+                    const CircularProgressIndicator(strokeWidth: 3),
+                    const SizedBox(height: 28),
+                    _buildLoadingStepTile(stepIndex: 0, label: "Evaluating Problem Intent..."),
+                    const SizedBox(height: 12),
+                    _buildLoadingStepTile(stepIndex: 1, label: "Running AI Diagnostic Evaluation..."),
+                    const SizedBox(height: 12),
+                    _buildLoadingStepTile(stepIndex: 2, label: "Formulating 5-Step Triage..."),
                   ],
                 ),
-              )
-            : SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _analysis!.category,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: Theme.of(context).primaryColor,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              final msg = SosBroadcastService.buildSosMessage(
-                                problem: _analysis!.problem,
-                                location: _analysis!.location,
-                              );
-                              SosBroadcastService.shareViaSystem(msg);
-                            },
-                            icon: const Icon(Icons.sos, color: Colors.white, size: 18),
-                            label: const Text('Broadcast SOS', style: TextStyle(color: Colors.white, fontSize: 13)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(20),
+              ),
+            );
+          }
+
+          if (snapshot.hasError || !snapshot.hasData) {
+            return const Center(child: Text("Error processing analysis. Please try again."));
+          }
+
+          final analysis = snapshot.data!;
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Problem Analysis Context Card
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16.0),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(12.0),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Original Problem", style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                      const SizedBox(height: 4),
+                      Text(analysis.originalProblem, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      Text("Problem type: ${analysis.problemType}"),
+                      Text("Urgency level: ${analysis.urgencyLevel}"),
+                      Text("Location context: ${analysis.locationContext}"),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // AI DIAGNOSIS CARD
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16.0),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(12.0),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.psychology, color: Colors.blue.shade700, size: 20),
+                          const SizedBox(width: 8),
+                          Text("AI DIAGNOSTIC EVALUATION", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue.shade900)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        analysis.aiDiagnosis,
+                        style: TextStyle(fontSize: 14, color: Colors.blue.shade900, height: 1.4),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // 5-STEP DIAGNOSTIC TRIAGE SECTION
+                const Text(
+                  "5-Step Diagnostic Triage",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "Select options below to refine solution orchestration:",
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 16),
+
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: analysis.diagnosticQuestions.length,
+                  itemBuilder: (context, index) {
+                    final q = analysis.diagnosticQuestions[index];
+                    final selectedOption = _selectedAnswers[index];
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 16.0),
+                      padding: const EdgeInsets.all(12.0),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: Colors.grey.shade200),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10.0),
+                        border: Border.all(color: Colors.grey.shade300),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Original Problem', style: TextStyle(color: Colors.grey)),
-                          const SizedBox(height: 4),
                           Text(
-                            _analysis!.problem,
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                            q.question,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                           ),
-                          const SizedBox(height: 18),
-                          _InfoRow(label: 'Problem type', value: _analysis!.problemType),
-                          _InfoRow(label: 'Urgency level', value: _analysis!.urgency),
-                          _InfoRow(label: 'Location context', value: _analysis!.location),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8.0,
+                            runSpacing: 4.0,
+                            children: q.options.map((option) {
+                              final isSelected = selectedOption == option;
+                              return ChoiceChip(
+                                label: Text(option, style: const TextStyle(fontSize: 12)),
+                                selected: isSelected,
+                                selectedColor: Colors.blue.shade100,
+                                onSelected: (_) => _onOptionSelected(index, option),
+                              );
+                            }).toList(),
+                          ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Identified Needs',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: _analysis!.needs
-                          .map(
-                            (need) => Chip(
-                              avatar: const Icon(Icons.check_circle_outline, size: 18),
-                              label: Text(need),
-                              backgroundColor: Colors.blue.shade50,
-                              side: BorderSide(color: Colors.blue.shade100),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                    if (_analysis!.questions.isNotEmpty) ...[
-                      const SizedBox(height: 24),
-                      const Text(
-                        'Clarifying Questions',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 6),
-                      ..._analysis!.questions.map((q) {
-                        final selected = _selectedAnswers[q.id];
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 14),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.grey.shade300),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(q.question, style: const TextStyle(fontWeight: FontWeight.w700)),
-                              const SizedBox(height: 10),
-                              Wrap(
-                                spacing: 8,
-                                children: q.options.map((opt) {
-                                  final isChosen = selected == opt;
-                                  return ChoiceChip(
-                                    label: Text(opt),
-                                    selected: isChosen,
-                                    onSelected: (_) {
-                                      setState(() => _selectedAnswers[q.id] = opt);
-                                      _fetchAnalysis();
-                                    },
-                                  );
-                                }).toList(),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-                    ],
-                    const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => SolutionsScreen(
-                                problem: widget.problem,
-                                analysis: _analysis,
-                              ),
-                            ),
-                          );
-                        },
-                        child: const Text('View Solution Engine Options'),
-                      ),
-                    ),
-                  ],
+                    );
+                  },
                 ),
-              ),
+
+                const SizedBox(height: 24),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      final selectedClarificationsList = _selectedAnswers.values.toList();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => SolutionsScreen(
+                            originalProblem: analysis.originalProblem,
+                            aiDiagnosis: analysis.aiDiagnosis,
+                            locationContext: analysis.locationContext,
+                            urgencyLevel: analysis.urgencyLevel,
+                            selectedClarifications: selectedClarificationsList,
+                          ),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2563EB),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)),
+                    ),
+                    child: const Text(
+                      "Orchestrate Solutions with Diagnostic Data",
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
-}
 
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
+  Widget _buildLoadingStepTile({required int stepIndex, required String label}) {
+    final bool isDone = _loadingStep > stepIndex;
+    final bool isCurrent = _loadingStep == stepIndex;
 
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(label, style: const TextStyle(color: Colors.grey)),
+    return Row(
+      children: [
+        Icon(
+          isDone ? Icons.check_circle : isCurrent ? Icons.auto_awesome : Icons.radio_button_unchecked,
+          color: isDone ? Colors.green : isCurrent ? const Color(0xFF2563EB) : Colors.grey.shade400,
+          size: 20,
+        ),
+        const SizedBox(width: 12),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: isCurrent || isDone ? FontWeight.bold : FontWeight.normal,
+            color: isCurrent || isDone ? const Color(0xFF1E293B) : Colors.grey.shade500,
           ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

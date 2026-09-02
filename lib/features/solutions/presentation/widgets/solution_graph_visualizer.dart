@@ -1,73 +1,89 @@
 import 'package:flutter/material.dart';
-import '../../../../models/problem_analysis.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../../core/services/connect_brain_service.dart';
 
 class SolutionGraphVisualizer extends StatelessWidget {
-  const SolutionGraphVisualizer({super.key, required this.analysis});
+  final List<SolutionOption> solutionPaths;
 
-  final ProblemAnalysis analysis;
+  const SolutionGraphVisualizer({super.key, required this.solutionPaths});
+
+  Future<void> _launchDynamicSearch(String query) async {
+    final Uri googleMapsUri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}'
+    );
+
+    if (await canLaunchUrl(googleMapsUri)) {
+      await launchUrl(googleMapsUri, mode: LaunchMode.externalApplication);
+    } else {
+      final Uri webUri = Uri.parse(
+        'https://www.google.com/search?q=${Uri.encodeComponent(query)}'
+      );
+      await launchUrl(webUri, mode: LaunchMode.externalApplication);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Emergency Solution Graph',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          const SizedBox(height: 16),
-          _buildNode(analysis.problem, Colors.redAccent, Icons.warning_amber),
-          _buildConnector(),
-          _buildNode(analysis.category, Colors.amber, Icons.category),
-          _buildConnector(),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: analysis.needs
-                .map((need) => _buildNode(need, Colors.blueAccent, Icons.build_circle, isCompact: true))
-                .toList(),
-          ),
-        ],
-      ),
-    );
-  }
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: solutionPaths.length,
+      itemBuilder: (context, index) {
+        final option = solutionPaths[index];
 
-  Widget _buildNode(String text, Color color, IconData icon, {bool isCompact = false}) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 14, vertical: isCompact ? 6 : 10),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.2),
-        border: Border.all(color: color),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: isCompact ? 16 : 20),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              text,
-              style: TextStyle(color: Colors.white, fontSize: isCompact ? 12 : 14, fontWeight: FontWeight.w600),
-            ),
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+          padding: const EdgeInsets.all(16.0),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12.0),
+            border: Border.all(color: Colors.blue.shade100),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              )
+            ],
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildConnector() {
-    return Container(
-      margin: const EdgeInsets.only(left: 20),
-      height: 20,
-      width: 2,
-      color: Colors.white30,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                option.title,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                option.category,
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                option.description,
+                style: const TextStyle(fontSize: 14, color: Colors.black87),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _launchDynamicSearch(option.searchQuery),
+                  icon: const Icon(Icons.open_in_new, size: 18),
+                  label: Text("Execute ${option.title}"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8.0),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

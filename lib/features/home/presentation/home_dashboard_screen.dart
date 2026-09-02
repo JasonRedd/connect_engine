@@ -60,8 +60,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CONNECT Safety Engine',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'CONNECT Safety Engine',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         elevation: 0,
       ),
       body: SingleChildScrollView(
@@ -72,15 +74,20 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
             Card(
               elevation: 4,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Emergency Crisis AI Input',
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold)),
+                    const Text(
+                      'Emergency Crisis AI Input',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: _crisisController,
@@ -88,12 +95,15 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       decoration: InputDecoration(
                         hintText: 'e.g. Engine fire on highway, severe bleeding...',
                         suffixIcon: IconButton(
-                          icon: Icon(_isListening ? Icons.mic : Icons.mic_none,
-                              color: _isListening ? Colors.red : Colors.blue),
+                          icon: Icon(
+                            _isListening ? Icons.mic : Icons.mic_none,
+                            color: _isListening ? Colors.red : Colors.blue,
+                          ),
                           onPressed: _toggleVoiceInput,
                         ),
                         border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -101,8 +111,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       width: double.infinity,
                       child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red.shade700,
-                            foregroundColor: Colors.white),
+                          backgroundColor: Colors.red.shade700,
+                          foregroundColor: Colors.white,
+                        ),
                         onPressed: () => _submitCrisis(_crisisController.text),
                         icon: const Icon(Icons.bolt),
                         label: const Text('Analyze Emergency Crisis'),
@@ -113,8 +124,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            const Text('Quick Emergency Tools',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text(
+              'Quick Emergency Tools',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 16),
             GridView.count(
               crossAxisCount: 2,
@@ -131,7 +144,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (_) => const EmergencyCameraScreen()),
+                      builder: (_) => const EmergencyCameraScreen(),
+                    ),
                   ),
                 ),
                 _DashboardTile(
@@ -142,7 +156,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (_) => const OfflineDirectoryScreen()),
+                      builder: (_) => const OfflineDirectoryScreen(),
+                    ),
                   ),
                 ),
                 _DashboardTile(
@@ -153,7 +168,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (_) => const FirstAidScreen()),
+                      builder: (_) => const FirstAidScreen(),
+                    ),
                   ),
                 ),
                 _DashboardTile(
@@ -164,7 +180,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (_) => const MedicalProfileScreen()),
+                      builder: (_) => const MedicalProfileScreen(),
+                    ),
                   ),
                 ),
               ],
@@ -209,12 +226,19 @@ class _DashboardTile extends StatelessWidget {
           children: [
             Icon(icon, color: color, size: 32),
             const SizedBox(height: 12),
-            Text(title,
-                style: TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 16, color: color)),
+            Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: color,
+              ),
+            ),
             const SizedBox(height: 4),
-            Text(subtitle,
-                style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            Text(
+              subtitle,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
           ],
         ),
       ),
