@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../../core/services/connect_brain_service.dart';
 import '../../analyze_problem/presentation/analysis_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -10,217 +13,283 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _problemController = TextEditingController();
+  final ConnectBrainService _brainService = ConnectBrainService();
+  bool _isLoading = false;
 
-  void _submitProblem(String problemText) {
-    if (problemText.trim().isEmpty) return;
-    
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => AnalysisScreen(
-          problemText: problemText.trim(),
-        ),
-      ),
+  Future<Position?> _getCurrentLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return null;
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return null;
+    }
+
+    if (permission == LocationPermission.deniedForever) return null;
+
+    try {
+      const LocationSettings locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 5),
+      );
+      return await Geolocator.getCurrentPosition(locationSettings: locationSettings);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<void> _makeEmergencyCall(String phoneNumber) async {
+    final Uri url = Uri.parse("tel:$phoneNumber");
+    if (!await launchUrl(url)) {
+      debugPrint("Could not dial $phoneNumber");
+    }
+  }
+
+  void _showSosDialerModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(24.0),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24.0)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade100,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.sos_rounded, color: Colors.red.shade700, size: 28),
+                  ),
+                  const SizedBox(width: 12),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "CONNECT Direct Dispatch Modal",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E293B),
+                        ),
+                      ),
+                      Text(
+                        "Instant 1-Tap Emergency Hotline Connection",
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              _buildSosTile(Icons.local_hospital, "Medical Ambulance Dispatch", "112", Colors.red),
+              const SizedBox(height: 10),
+              _buildSosTile(Icons.local_police, "Police Assistance Hotline", "100", Colors.blue),
+              const SizedBox(height: 10),
+              _buildSosTile(Icons.minor_crash, "Highway Towing & Breakdown", "1033", Colors.purple),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  Widget _buildSosTile(IconData icon, String title, String number, Color color) {
+    return ListTile(
+      tileColor: color.withValues(alpha: 0.1),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      leading: Icon(icon, color: color),
+      title: Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
+        child: Text("Dial $number", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
+      onTap: () {
+        Navigator.pop(context);
+        _makeEmergencyCall(number);
+      },
+    );
+  }
+
+  Future<void> _processProblem() async {
+    final text = _problemController.text.trim();
+    if (text.isEmpty) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      Position? position = await _getCurrentLocation();
+      final ProblemAnalysis analysis = await _brainService.analyzeProblem(
+        text,
+        latitude: position?.latitude,
+        longitude: position?.longitude,
+      );
+
+      if (mounted) {
+        // Navigate to AnalysisScreen (Diagnosis Screen) first
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => AnalysisScreen(
+              problemAnalysis: analysis,
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("CONNECT"),
-        elevation: 0,
+        title: const Text(
+          "CONNECT",
+          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2),
+        ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.flash_on, color: Colors.amber),
-            onPressed: () {},
-            tooltip: 'SOS Quick Trigger',
+          Padding(
+            padding: const EdgeInsets.only(right: 12.0),
+            child: InkWell(
+              onTap: () => _showSosDialerModal(context),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.red.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      "SOS DISPATCH",
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header Title
-            const Text(
-              "What's happening?",
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1E293B),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // CONNECT Engine Active Badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.bolt, color: Colors.blue.shade700, size: 14),
+                    const SizedBox(width: 4),
+                    Text(
+                      "CONNECT Engine: Active (GPS Sync)",
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              "Describe your issue or select a core crisis scenario.",
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 20),
+              const SizedBox(height: 12),
 
-            // Dynamic Problem Input Bar
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16.0),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+              const Text(
+                "What's your emergency or problem?",
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               ),
-              child: TextField(
+              const SizedBox(height: 8),
+              Text(
+                "Describe what happened. We'll triage and route you to verified actions.",
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+              ),
+              const SizedBox(height: 20),
+              TextField(
                 controller: _problemController,
-                maxLines: 3,
+                maxLines: 4,
                 decoration: InputDecoration(
-                  hintText: "e.g. My car engine stopped on the highway...",
-                  hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.all(16.0),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Submit Button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => _submitProblem(_problemController.text),
-                icon: const Icon(Icons.auto_awesome, size: 20),
-                label: const Text(
-                  "Analyze Problem with AI",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12.0),
+                  hintText: "e.g., My hand is limp and not responding...",
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF2563EB), width: 2),
                   ),
                 ),
               ),
-            ),
-
-            const SizedBox(height: 32),
-
-            // Section Label for Locked Scenarios
-            Row(
-              children: [
-                const Icon(Icons.local_fire_department, color: Colors.orange, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  "CORE DEMO SCENARIOS",
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.1,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // 1. Scenario: Vehicle Breakdown
-            _buildScenarioCard(
-              title: "Vehicle Breakdown",
-              subtitle: "Engine failure, flat tire, towing, or road assistance",
-              icon: Icons.directions_car_filled_rounded,
-              iconBgColor: Colors.blue.shade50,
-              iconColor: Colors.blue.shade700,
-              onTap: () => _submitProblem("My car broke down and won't start on the road"),
-            ),
-            const SizedBox(height: 12),
-
-            // 2. Scenario: Lost Wallet & Keys
-            _buildScenarioCard(
-              title: "Lost Wallet / Belongings",
-              subtitle: "Card blocking, transit lost-and-found, & document support",
-              icon: Icons.account_balance_wallet_rounded,
-              iconBgColor: Colors.amber.shade50,
-              iconColor: Colors.amber.shade800,
-              onTap: () => _submitProblem("I lost my wallet and keys in a public area"),
-            ),
-            const SizedBox(height: 12),
-
-            // 3. Scenario: Emergency Nearby Help
-            _buildScenarioCard(
-              title: "Emergency Medical & Safety",
-              subtitle: "Urgent hospital routing, first aid, & immediate SOS",
-              icon: Icons.health_and_safety_rounded,
-              iconBgColor: Colors.red.shade50,
-              iconColor: Colors.red.shade600,
-              onTap: () => _submitProblem("Medical emergency needing urgent care hospital nearby"),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildScenarioCard({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color iconBgColor,
-    required Color iconColor,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16.0),
-      child: Container(
-        padding: const EdgeInsets.all(16.0),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16.0),
-          border: Border.all(color: Colors.grey.shade200),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12.0),
-              decoration: BoxDecoration(
-                color: iconBgColor,
-                borderRadius: BorderRadius.circular(12.0),
-              ),
-              child: Icon(icon, color: iconColor, size: 28),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E293B),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _processProblem,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                ],
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text(
+                          "Run AI Triage & Direct Dispatch",
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                ),
               ),
-            ),
-            Icon(Icons.chevron_right, color: Colors.grey.shade400),
-          ],
+            ],
+          ),
         ),
       ),
     );

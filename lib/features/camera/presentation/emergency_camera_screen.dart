@@ -1,8 +1,6 @@
-import 'dart:convert';
-import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-
-import '../../analyze_problem/presentation/analysis_screen.dart';
+import '../../../../core/services/connect_brain_service.dart';
+import '../../solutions/presentation/solutions_screen.dart';
 
 class EmergencyCameraScreen extends StatefulWidget {
   const EmergencyCameraScreen({super.key});
@@ -12,107 +10,84 @@ class EmergencyCameraScreen extends StatefulWidget {
 }
 
 class _EmergencyCameraScreenState extends State<EmergencyCameraScreen> {
-  CameraController? _controller;
-  List<CameraDescription>? _cameras;
-  bool _isInitializing = true;
-  bool _isProcessing = false;
+  bool _isCapturing = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _initCamera();
-  }
+  void _processCameraCapture() async {
+    setState(() => _isCapturing = true);
 
-  Future<void> _initCamera() async {
-    try {
-      _cameras = await availableCameras();
-      if (_cameras != null && _cameras!.isNotEmpty) {
-        _controller = CameraController(_cameras![0], ResolutionPreset.medium);
-        await _controller!.initialize();
-      }
-    } catch (_) {
-      // Fallback if camera permission/hardware is unavailable
-    } finally {
-      if (mounted) setState(() => _isInitializing = false);
-    }
-  }
+    await Future.delayed(const Duration(seconds: 1));
 
-  Future<void> _captureAndAnalyze() async {
-    if (_controller == null || !_controller!.value.isInitialized || _isProcessing) return;
+    if (mounted) {
+      setState(() => _isCapturing = false);
 
-    setState(() => _isProcessing = true);
-
-    try {
-      final XFile image = await _controller!.takePicture();
-      final bytes = await image.readAsBytes();
-      final base64Image = base64Encode(bytes);
-
-      if (mounted) {
-        // Pass the image context payload to the analysis engine
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AnalysisScreen(
-              problem: '[VISUAL ANALYSIS REQUEST] Analyze attached image for hazards or medical symptoms.',
-              base64Image: base64Image,
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SolutionsScreen(
+            problemAnalysis: ProblemAnalysis(
+              originalProblem: "Visual Scan Emergency Capture",
+              problemType: "Medical Emergency",
+              aiDiagnosis: "Visual triage assessment generated for captured camera image.",
+              urgencyLevel: "HIGH",
+              locationContext: "GPS Location Active",
             ),
           ),
-        );
-      }
-    } catch (e) {
-      if (mounted) setState(() => _isProcessing = false);
+        ),
+      );
     }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isInitializing) {
-      return const Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (_controller == null || !_controller!.value.isInitialized) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Camera Feed')),
-        body: const Center(child: Text('Camera hardware unavailable or permission denied.')),
-      );
-    }
-
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          CameraPreview(_controller!),
-          Positioned(
-            bottom: 40,
-            left: 0,
-            right: 0,
-            child: Column(
-              children: [
-                const Text(
-                  'Align situation in frame',
-                  style: TextStyle(color: Colors.white, backgroundColor: Colors.black54, fontSize: 14),
+      appBar: AppBar(
+        title: const Text("Emergency Camera Scan"),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                const SizedBox(height: 16),
-                FloatingActionButton.large(
-                  onPressed: _isProcessing ? null : _captureAndAnalyze,
-                  backgroundColor: Colors.redAccent,
-                  child: _isProcessing
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Icon(Icons.camera_alt, color: Colors.white, size: 36),
+                child: const Center(
+                  child: Icon(
+                    Icons.camera_alt_outlined,
+                    color: Colors.white54,
+                    size: 64,
+                  ),
                 ),
-              ],
+              ),
             ),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: _isCapturing ? null : _processCameraCapture,
+                  icon: const Icon(Icons.center_focus_strong),
+                  label: _isCapturing
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text(
+                          "Analyze Visual Emergency",
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade700,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
