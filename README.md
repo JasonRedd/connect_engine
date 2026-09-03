@@ -675,20 +675,6 @@ npm run dev
 4. The app surfaces solution options and next actions
 5. The user can revisit past requests and saved preferences
 
-## Run locally
-
-```bash
-flutter pub get
-flutter run
-```
-
-## Recommended next steps
-
-- Connect the app to a real backend or AI service
-- Add Supabase authentication and history persistence
-- Add location-aware resource results and phone/route actions
-- Expand the problem classification model for more categories
-
 ## App concept
 
 The product is intentionally built as a problem-to-solution engine rather than a generic chatbot. Instead of asking users to search multiple apps manually, CONNECT tries to understand the issue and route them to the best available path to help.
